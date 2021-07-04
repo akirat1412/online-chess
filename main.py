@@ -13,7 +13,7 @@ class App:
 
         self.board_image = None
         self.selection = None
-        self.selection_id = -1
+        self.selection_square = []
 
         self.canvas = tk.Canvas(self.root, width=480, height=480)
         self.canvas.place(x=10, y=10)
@@ -26,7 +26,16 @@ class App:
         self.board_image = tk.PhotoImage(file='images/chessboard.png')
         self.canvas.create_image(0, 0, image=self.board_image, anchor='nw')
 
+    def render_selection(self):
+        if self.selection_square:
+            self.selection = tk.PhotoImage(file='images/selection.png')
+            self.canvas.create_image(self.selection_square[0] * 60 + 30,
+                                     (7 - self.selection_square[1]) * 60 + 30, image=self.selection)
+        else:
+            self.selection = None
+
     def render_pieces(self):
+        self.piece_images = [[None for _ in range(8)] for _ in range(8)]
         for x, y in self.game.white_pieces:
             self.render_piece(x, y)
         for x, y in self.game.black_pieces:
@@ -39,14 +48,23 @@ class App:
         else:
             piece_file = 'images/' + piece.color + '_' + piece.piece + '.png'
             self.piece_images[x][y] = ImageTk.PhotoImage(file=piece_file)
-            self.canvas.create_image(30 + 60 * y, 450 - 60 * x, image=self.piece_images[x][y])
+            self.canvas.create_image(30 + 60 * x, 450 - 60 * y, image=self.piece_images[x][y])
 
     def interact(self, event):
-        board_x = (event.x // 60) * 60 + 30
-        board_y = (event.y // 60) * 60 + 30
-        self.selection = tk.PhotoImage(file='images/selection.png')
-        self.selection_id = self.canvas.create_image(board_x, board_y, image=self.selection)
+        selection_square = [event.x // 60, 7 - (event.y // 60)]
+
+        if (self.game.turn == 'white' and selection_square in self.game.white_pieces) or \
+           (self.game.turn == 'black' and selection_square in self.game.black_pieces):
+            self.selection_square = selection_square
+        elif self.selection_square:
+            if self.game.is_legal(self.selection_square, selection_square):
+                self.game.move(self.selection_square, selection_square)
+            self.selection_square = []
+
+        self.render_selection()
         self.render_pieces()
+
+
 
 
 
