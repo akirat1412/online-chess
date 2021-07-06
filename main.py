@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import font as tkfont
-from PIL import Image, ImageTk
+from PIL import ImageTk
 from game import Game
 
 
@@ -23,9 +23,11 @@ class App:
         new_game_button['font'] = button_font
         new_game_button.place(x=600, y=100)
 
-        status_font = tkfont.Font(size=18)
-        status_text = tk.Label(self.root, text='hi', font=status_font)
-        status_text.place(x=600, y=200)
+        self.status_font = tkfont.Font(size=18)
+        self.status_text = tk.StringVar()
+        self.status_text.set('hi')
+        self.status_label = tk.Label(self.root, textvariable=self.status_text, font=self.status_font)
+        self.status_label.place(x=600, y=200)
 
         self.canvas = tk.Canvas(self.root, width=480, height=480)
         self.canvas.place(x=10, y=10)
@@ -38,6 +40,9 @@ class App:
         self.game = Game()
         self.in_progress = True
         self.render_pieces()
+        self.selection_square = None
+        self.render_indicators()
+        self.render_status()
 
     def render_board(self):
         self.board_image = tk.PhotoImage(file='images/chessboard.png')
@@ -74,6 +79,9 @@ class App:
             self.piece_images[x][y] = ImageTk.PhotoImage(file=piece_file)
             self.canvas.create_image(30 + 60 * x, 450 - 60 * y, image=self.piece_images[x][y])
 
+    def render_status(self):
+        self.status_text.set(self.game.status)
+
     def interact(self, event):
         if not self.in_progress:
             return
@@ -90,9 +98,7 @@ class App:
 
         self.render_indicators()
         self.render_pieces()
-
-
-
+        self.render_status()
 
 
 # Press the green button in the gutter to run the script.

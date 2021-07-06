@@ -4,7 +4,7 @@ from piece import Piece
 class Game:
     def __init__(self):
         self.board = [[Piece() for _ in range(8)] for _ in range(8)]
-        self.status = 'in_progress'
+        self.status = ''
         self.turn = 'white'
         self.en_passant = None
         self.castling = [[True, True], [True, True]]
@@ -76,6 +76,7 @@ class Game:
                               [x, y-1], [x-1, y-1], [x-1, y], [x-1, y+1]]
         return attacking
 
+    # helper function to find all squares one side is attacking
     def get_attacking_helper(self, x, y, directions):
         attacking = []
         for dir_x, dir_y in directions:
@@ -134,6 +135,7 @@ class Game:
             else:
                 return self.black_king not in attacked
 
+    # helper function to check if a move puts the king in check
     def is_king_safe_helper(self, x, y, start, end, directions):
         attacked = []
         for dir_x, dir_y in directions:
@@ -151,10 +153,10 @@ class Game:
 
     # checks if move is legal (valid AND does not put king in check)
     def is_legal(self, start, end):
-        return end in self.get_legal_moves(start) and self.is_king_safe(start, end)
+        return end in self.get_valid_moves(start) and self.is_king_safe(start, end)
 
-    # checks if a move is legal, but not whether it puts king in check
-    def get_legal_moves(self, start):
+    # checks if a move is valid, but not whether it puts king in check
+    def get_valid_moves(self, start):
         x = start[0]
         y = start[1]
         piece = self.board[x][y]
@@ -239,6 +241,7 @@ class Game:
                 temp_y += dir_y
         return legal_moves
 
+    # checks if taking a pawn en passant leaves your king in check
     def is_en_passant_safe(self, pawn_x):
         attacked = []
         if self.turn == 'white':
@@ -259,6 +262,7 @@ class Game:
         else:
             return self.black_king not in attacked
 
+    # helper function for above
     def is_en_passant_safe_helper(self, pawn_x, x, y, directions):
         attacked = []
         for dir_x, dir_y in directions:
@@ -277,6 +281,18 @@ class Game:
                 temp_x += dir_x
                 temp_y += dir_y
         return attacked
+
+    def has_legal_moves(self):
+        if self.turn == 'white':
+            moving = self.white_pieces
+        else:
+            moving = self.black_pieces
+
+        for square in moving:
+            for move in self.get_valid_moves(square):
+                if self.is_legal(square, move):
+                    return True
+        return False
 
     # moves a piece
     # TODO: check for checkmate
@@ -347,20 +363,34 @@ class Game:
             if end in self.black_pieces:
                 self.black_pieces.remove(end)
             self.turn = 'black'
-            if self.is_in_check('black'):
+
+            check = self.is_in_check('black')
+            legal_moves = self.has_legal_moves()
+            if check:
                 self.check_square = self.black_king
+                if not legal_moves:
+                    self.status = 'White Wins!'
             else:
                 self.check_square = []
+                if not legal_moves:
+                    self.status = 'Draw'
         else:
             self.black_pieces.remove(start)
             self.black_pieces.append(end)
             if end in self.white_pieces:
                 self.white_pieces.remove(end)
             self.turn = 'white'
-            if self.is_in_check('white'):
+
+            check = self.is_in_check('white')
+            legal_moves = self.has_legal_moves()
+            if check:
                 self.check_square = self.white_king
+                if not legal_moves:
+                    self.status = 'Black Wins!'
             else:
                 self.check_square = []
+                if not legal_moves:
+                    self.status = 'Draw'
 
     def is_in_check(self, color):
         if color == 'white':
