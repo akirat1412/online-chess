@@ -18,16 +18,33 @@ class App:
         self.selection = None
         self.selection_square = []
 
+        TITLE_TEXT = 'Online Chess'
+        TITLE_FONT = tkfont.Font(size=24)
+        TITLE_LABEL = tk.Label(self.root, text=TITLE_TEXT, font=TITLE_FONT)
+        TITLE_LABEL.place(x=550, y=50)
+
+        self.ip_string_var = tk.StringVar()
+        IP_FONT = tkfont.Font(size=12)
+        self.ip_entry = tk.Entry(self.root, textvariable=self.ip_string_var, font=IP_FONT)
+        self.ip_entry.place(x=520, y=100, height=25, width=140)
+
         button_font = tkfont.Font(size=12)
-        new_game_button = tk.Button(self.root, text='New Game', bd=1, width=9, height=2, command=self.new_game)
-        new_game_button['font'] = button_font
-        new_game_button.place(x=600, y=100)
+        find_match_button = tk.Button(self.root, text='Find Match', bd=1, font=button_font)
+        find_match_button.place(x=670, y=100)
+        open_search_button = tk.Button(self.root, text='Open Search', bd=1, font=button_font)
+        open_search_button.place(x=555, y=150)
+        new_game_button = tk.Button(self.root, text='New Game', bd=1, command=self.new_game, font=button_font)
+        new_game_button.place(x=670, y=150)
+        resign_button = tk.Button(self.root, text='Resign', bd=1, font=button_font)
+        resign_button.place(x=595, y=250)
+        draw_button = tk.Button(self.root, text='Offer Draw', bd=1, font=button_font)
+        draw_button.place(x=670, y=250)
 
         self.status_font = tkfont.Font(size=18)
         self.status_text = tk.StringVar()
         self.status_text.set('hi')
         self.status_label = tk.Label(self.root, textvariable=self.status_text, font=self.status_font)
-        self.status_label.place(x=600, y=200)
+        self.status_label.place(x=550, y=200)
 
         self.canvas = tk.Canvas(self.root, width=480, height=480)
         self.canvas.place(x=10, y=10)
@@ -94,6 +111,8 @@ class App:
         elif self.selection_square:
             if self.game.is_legal(self.selection_square, selection_square):
                 self.game.move(self.selection_square, selection_square)
+                if self.game.status != '':
+                    self.in_progress = False
             self.selection_square = []
 
         self.render_indicators()
