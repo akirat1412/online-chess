@@ -2,7 +2,20 @@ import tkinter as tk
 from tkinter import font as tkfont
 from PIL import ImageTk
 from game import Game
+import threading
+import socket
 
+MSG_LEN = 4
+FORMAT = 'utf-8'
+PORT = 5054
+
+SEND_CHALLENGE = '8000'
+RECEIVE_CHALLENGE = '8001'
+ACCEPT_CHALLENGE = '8002'
+ACKNOWLEDGE_CHALLENGE = '8003'
+RESIGN = '8004'
+DRAW = '8005'
+DISCONNECT = '8006'
 
 class App:
     def __init__(self):
@@ -12,6 +25,11 @@ class App:
         self.root = tk.Tk()
         self.root.title('Chess Online')
         self.root.geometry('800x500+150+150')
+        self.player = 'white'
+
+        self.connector = None
+        self.searching = False
+        self.offered = False
 
         self.board_image = None
         self.threaten = None
@@ -29,22 +47,24 @@ class App:
         self.ip_entry.place(x=520, y=100, height=25, width=140)
 
         button_font = tkfont.Font(size=12)
-        find_match_button = tk.Button(self.root, text='Find Match', bd=1, font=button_font)
+        find_match_button = tk.Button(self.root, text='Find Match', bd=1,
+                                      command=self.create_client, font=button_font)
         find_match_button.place(x=670, y=100)
-        open_search_button = tk.Button(self.root, text='Open Search', bd=1, font=button_font)
+        open_search_button = tk.Button(self.root, text='Open Search', bd=1,
+                                       command=self.create_server, font=button_font)
         open_search_button.place(x=555, y=150)
-        new_game_button = tk.Button(self.root, text='New Game', bd=1, command=self.new_game, font=button_font)
+        new_game_button = tk.Button(self.root, text='New Game', bd=1, command=self.offer_game, font=button_font)
         new_game_button.place(x=670, y=150)
         resign_button = tk.Button(self.root, text='Resign', bd=1, font=button_font)
         resign_button.place(x=595, y=250)
         draw_button = tk.Button(self.root, text='Offer Draw', bd=1, font=button_font)
         draw_button.place(x=670, y=250)
 
-        self.status_font = tkfont.Font(size=18)
+        self.status_font = tkfont.Font(size=14)
         self.status_text = tk.StringVar()
-        self.status_text.set('hi')
+        self.status_text.set('')
         self.status_label = tk.Label(self.root, textvariable=self.status_text, font=self.status_font)
-        self.status_label.place(x=550, y=200)
+        self.status_label.place(x=525, y=200)
 
         self.canvas = tk.Canvas(self.root, width=480, height=480)
         self.canvas.place(x=10, y=10)
@@ -96,8 +116,12 @@ class App:
             self.piece_images[x][y] = ImageTk.PhotoImage(file=piece_file)
             self.canvas.create_image(30 + 60 * x, 450 - 60 * y, image=self.piece_images[x][y])
 
+    # TODO: show connection statuses
     def render_status(self):
-        self.status_text.set(self.game.status)
+        if self.game:
+            self.status_text.set(self.game.status)
+        else:
+            self.status_text.set()
 
     def interact(self, event):
         if not self.in_progress:
@@ -118,6 +142,75 @@ class App:
         self.render_indicators()
         self.render_pieces()
         self.render_status()
+
+    def offer_game(self):
+        self.offered = True
+
+    # run when 'Find Match' is pressed; creates a server to listen for potential matches
+    def create_server(self):
+        server_ip = socket.gethostbyname(socket.gethostname())
+        self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connector.bind((server_ip, PORT))
+        self.connector.listen()
+        thread = threading.Thread(target=self.open_connection)
+        thread.start()
+
+    # listens for potential matches; when one is found, accepts the connection
+    def open_connection(self):
+        self.searching = True
+        self.status_text.set('Accepting Matches')
+        while True:
+            conn, addr = self.connector.accept()
+            self.accept_connection(conn, addr)
+
+    # returns message to challenge sender
+    def accept_connection(self, conn, addr):
+        self.status_text.set('You received a challenge')
+        connected = True
+        while connected:
+            message = conn.recv(MSG_LEN).decode(FORMAT)
+            if message == SEND_CHALLENGE:
+                conn.send(RECEIVE_CHALLENGE.encode(FORMAT))
+                while connected:
+                    if self.offered:
+                        self.offered = False
+                        conn.send(ACCEPT_CHALLENGE.encode(FORMAT))
+                        self.status_text.set('Game started')
+                        self.new_game()
+                        self.play_game_as_server(conn, addr)
+
+    def play_game_as_server(self, conn, addr):
+        while True:
+            pass
+
+
+
+    def create_client(self):
+        server_ip = socket.gethostbyname(socket.gethostname())
+        self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connector.connect((server_ip, PORT))
+        thread = threading.Thread(target=self.connect_to_server)
+        thread.start()
+
+    def connect_to_server(self):
+        self.send(SEND_CHALLENGE)
+        connected = True
+        while connected:
+            message = self.connector.recv(MSG_LEN).decode(FORMAT)
+            if message == RECEIVE_CHALLENGE:
+                self.status_text.set('Your challenge was received')
+            if message == ACCEPT_CHALLENGE:
+                self.new_game()
+                self.status_text.set('Game started')
+                self.start_game_as_client()
+
+    def start_game_as_client(self):
+        while True:
+            pass
+
+
+    def send(self, message):
+        self.connector.send(message.encode(FORMAT))
 
 
 # Press the green button in the gutter to run the script.
