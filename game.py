@@ -9,6 +9,8 @@ class Game:
         self.en_passant = None
         self.castling = [[True, True], [True, True]]
         self.check_square = []
+        self.deleted_squares = []
+        self.moved_squares = []
 
         self.initialize_board()
 
@@ -295,7 +297,6 @@ class Game:
         return False
 
     # moves a piece
-    # TODO: check for checkmate
     def move(self, start, end):
         start_x = start[0]
         start_y = start[1]
@@ -303,6 +304,9 @@ class Game:
         end_y = end[1]
 
         piece = self.board[start_x][start_y]
+        self.deleted_squares.append(start)
+        self.deleted_squares.append(end)
+        self.moved_squares.append(end)
 
         if piece.piece == 'pawn':
             if (piece.color == 'white' and end_y == 7) or (piece.color == 'black' and end_y == 0):
@@ -317,10 +321,12 @@ class Game:
                     self.board[end_x][end_y].color is None:
                 self.board[end_x][end_y-1] = Piece()
                 self.black_pieces.remove([end_x, end_y-1])
+                self.deleted_squares.append([end_x, end_y-1])
             if piece.color == 'black' and (start_x - end_x == 1 or start_x - end_x == -1) and \
                     self.board[end_x][end_y].color is None:
                 self.board[end_x][end_y+1] = Piece()
                 self.white_pieces.remove([end_x, end_y+1])
+                self.deleted_squares.append([end_x, end_y+1])
         else:
             self.en_passant = None
 
@@ -333,12 +339,16 @@ class Game:
                     self.castling[0] = [False, False]
                     self.white_pieces.append([3, 0])
                     self.white_pieces.remove([0, 0])
+                    self.deleted_squares.append([0, 0])
+                    self.moved_squares.append([3, 0])
                 elif start_x - end_x == -2:
                     self.board[7][0] = Piece()
                     self.board[5][0] = Piece('white', 'rook')
                     self.castling[0] = [False, False]
                     self.white_pieces.append([5, 0])
                     self.white_pieces.remove([7, 0])
+                    self.deleted_squares.append([7, 0])
+                    self.moved_squares.append([5, 0])
             else:
                 self.black_king = end
                 if start_x - end_x == 2:
@@ -347,13 +357,16 @@ class Game:
                     self.castling[1] = [False, False]
                     self.black_pieces.append([3, 7])
                     self.black_pieces.remove([0, 7])
+                    self.deleted_squares.append([0, 7])
+                    self.moved_squares.append([3, 7])
                 elif start_x - end_x == -2:
                     self.board[7][7] = Piece()
                     self.board[5][7] = Piece('black', 'rook')
                     self.castling[1] = [False, False]
                     self.black_pieces.append([5, 7])
                     self.black_pieces.remove([7, 7])
-
+                    self.deleted_squares.append([7, 7])
+                    self.moved_squares.append([5, 7])
         self.board[start_x][start_y] = Piece()
         self.board[end_x][end_y] = piece
 

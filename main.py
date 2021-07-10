@@ -17,23 +17,27 @@ RESIGN = '8004'
 DRAW = '8005'
 DISCONNECT = '8006'
 
+
 class App:
     def __init__(self):
         self.game = None
         self.in_progress = False
-        self.piece_images = [[None for _ in range(8)] for _ in range(8)]
+        self.piece_images = None
         self.root = tk.Tk()
         self.root.title('Chess Online')
         self.root.geometry('800x500+150+150')
         self.player = 'white'
+        self.load_pieces()
 
         self.connector = None
+        self.conn_type = None
+        self.client_conn = None
         self.searching = False
         self.offered = False
 
         self.board_image = None
-        self.threaten = None
-        self.selection = None
+        self.threaten = tk.PhotoImage(file='images/threaten.png')
+        self.selection = tk.PhotoImage(file='images/selection.png')
         self.selection_square = []
 
         TITLE_TEXT = 'Online Chess'
@@ -73,10 +77,25 @@ class App:
 
         self.root.mainloop()
 
+    def load_pieces(self):
+        self.piece_images = [[], []]
+        self.piece_images[0].append(ImageTk.PhotoImage(file='images/white_pawn.png'))
+        self.piece_images[0].append(ImageTk.PhotoImage(file='images/white_knight.png'))
+        self.piece_images[0].append(ImageTk.PhotoImage(file='images/white_bishop.png'))
+        self.piece_images[0].append(ImageTk.PhotoImage(file='images/white_rook.png'))
+        self.piece_images[0].append(ImageTk.PhotoImage(file='images/white_queen.png'))
+        self.piece_images[0].append(ImageTk.PhotoImage(file='images/white_king.png'))
+        self.piece_images[1].append(ImageTk.PhotoImage(file='images/black_pawn.png'))
+        self.piece_images[1].append(ImageTk.PhotoImage(file='images/black_knight.png'))
+        self.piece_images[1].append(ImageTk.PhotoImage(file='images/black_bishop.png'))
+        self.piece_images[1].append(ImageTk.PhotoImage(file='images/black_rook.png'))
+        self.piece_images[1].append(ImageTk.PhotoImage(file='images/black_queen.png'))
+        self.piece_images[1].append(ImageTk.PhotoImage(file='images/black_king.png'))
+
     def new_game(self):
         self.game = Game()
         self.in_progress = True
-        self.render_pieces()
+        self.render_all_pieces()
         self.selection_square = None
         self.render_indicators()
         self.render_status()
@@ -86,22 +105,25 @@ class App:
         self.canvas.create_image(0, 0, image=self.board_image, anchor='nw')
 
     def render_indicators(self):
+        self.canvas.delete('indicator')
         if self.game.check_square:
-            self.threaten = tk.PhotoImage(file='images/threaten.png')
             self.canvas.create_image(self.game.check_square[0] * 60 + 30,
-                                     (7 - self.game.check_square[1]) * 60 + 30, image=self.threaten)
-        else:
-            self.threaten = None
+                                     (7 - self.game.check_square[1]) * 60 + 30, image=self.threaten, tags='indicator')
 
         if self.selection_square:
-            self.selection = tk.PhotoImage(file='images/selection.png')
             self.canvas.create_image(self.selection_square[0] * 60 + 30,
-                                     (7 - self.selection_square[1]) * 60 + 30, image=self.selection)
-        else:
-            self.selection = None
+                                     (7 - self.selection_square[1]) * 60 + 30, image=self.selection, tags='indicator')
 
-    def render_pieces(self):
-        self.piece_images = [[None for _ in range(8)] for _ in range(8)]
+    def render_moved_pieces(self):
+        for x, y in self.game.deleted_squares:
+            self.canvas.delete(f'p{x}{y}')
+        for x, y in self.game.moved_squares:
+            self.render_piece(x, y)
+        self.game.deleted_squares = []
+        self.game.moved_squares = []
+
+    def render_all_pieces(self):
+        self.canvas.delete('piece')
         for x, y in self.game.white_pieces:
             self.render_piece(x, y)
         for x, y in self.game.black_pieces:
@@ -109,38 +131,69 @@ class App:
 
     def render_piece(self, x, y):
         piece = self.game.board[x][y]
-        if piece.color is None:
-            return
-        else:
-            piece_file = 'images/' + piece.color + '_' + piece.piece + '.png'
-            self.piece_images[x][y] = ImageTk.PhotoImage(file=piece_file)
-            self.canvas.create_image(30 + 60 * x, 450 - 60 * y, image=self.piece_images[x][y])
+        if piece.color == 'white':
+            if piece.piece == 'pawn':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[0][0], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'knight':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[0][1], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'bishop':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[0][2], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'rook':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[0][3], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'queen':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[0][4], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'king':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[0][5], tags=('piece', f'p{x}{y}'))
+        elif piece.color == 'black':
+            if piece.piece == 'pawn':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[1][0], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'knight':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[1][1], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'bishop':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[1][2], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'rook':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[1][3], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'queen':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[1][4], tags=('piece', f'p{x}{y}'))
+            elif piece.piece == 'king':
+                self.canvas.create_image(30+60*x, 450-60*y, image=self.piece_images[1][5], tags=('piece', f'p{x}{y}'))
 
     # TODO: show connection statuses
     def render_status(self):
         if self.game:
             self.status_text.set(self.game.status)
         else:
-            self.status_text.set()
+            self.status_text.set('a')
 
     def interact(self, event):
         if not self.in_progress:
             return
 
         selection_square = [event.x // 60, 7 - (event.y // 60)]
-
         if (self.game.turn == 'white' and selection_square in self.game.white_pieces) or \
            (self.game.turn == 'black' and selection_square in self.game.black_pieces):
             self.selection_square = selection_square
+            self.render_indicators()
+            self.render_piece(selection_square[0], selection_square[1])
+            return
         elif self.selection_square:
             if self.game.is_legal(self.selection_square, selection_square):
-                self.game.move(self.selection_square, selection_square)
+                if self.conn_type == 'server':
+                    self.make_move_as_server(self.selection_square, selection_square)
+                else:
+                    self.make_move_as_client(self.selection_square, selection_square)
+                self.move(self.selection_square, selection_square)
                 if self.game.status != '':
                     self.in_progress = False
-            self.selection_square = []
+            else:
+                self.selection_square = []
+                self.render_indicators()
 
+    def move(self, start, end):
+        self.game.move(start, end)
+        self.selection_square = []
         self.render_indicators()
-        self.render_pieces()
+        self.render_moved_pieces()
         self.render_status()
 
     def offer_game(self):
@@ -148,6 +201,7 @@ class App:
 
     # run when 'Find Match' is pressed; creates a server to listen for potential matches
     def create_server(self):
+        self.conn_type = 'server'
         server_ip = socket.gethostbyname(socket.gethostname())
         self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connector.bind((server_ip, PORT))
@@ -160,11 +214,11 @@ class App:
         self.searching = True
         self.status_text.set('Accepting Matches')
         while True:
-            conn, addr = self.connector.accept()
-            self.accept_connection(conn, addr)
+            self.client_conn, _ = self.connector.accept()
+            self.accept_connection(self.client_conn)
 
     # returns message to challenge sender
-    def accept_connection(self, conn, addr):
+    def accept_connection(self, conn):
         self.status_text.set('You received a challenge')
         connected = True
         while connected:
@@ -175,17 +229,24 @@ class App:
                     if self.offered:
                         self.offered = False
                         conn.send(ACCEPT_CHALLENGE.encode(FORMAT))
-                        self.status_text.set('Game started')
                         self.new_game()
-                        self.play_game_as_server(conn, addr)
+                        self.status_text.set('Game started')
+                        self.render_all_pieces()
 
-    def play_game_as_server(self, conn, addr):
-        while True:
-            pass
+    def make_move_as_server(self, start, end):
+        print(f'made move from {start} to {end}')
+        print(self.client_conn)
+        self.client_conn.send(f'{start[0]}{start[1]}{end[0]}{end[1]}'.encode(FORMAT))
+        thread = threading.Thread(target=self.wait_as_server)
+        thread.start()
 
-
+    def wait_as_server(self):
+        message = self.client_conn.recv(MSG_LEN).decode(FORMAT)
+        self.move([int(message[0]), int(message[1])], [int(message[2]), int(message[3])])
+        print(message)
 
     def create_client(self):
+        self.conn_type = 'client'
         server_ip = socket.gethostbyname(socket.gethostname())
         self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connector.connect((server_ip, PORT))
@@ -193,7 +254,7 @@ class App:
         thread.start()
 
     def connect_to_server(self):
-        self.send(SEND_CHALLENGE)
+        self.connector.send(SEND_CHALLENGE.encode(FORMAT))
         connected = True
         while connected:
             message = self.connector.recv(MSG_LEN).decode(FORMAT)
@@ -202,15 +263,21 @@ class App:
             if message == ACCEPT_CHALLENGE:
                 self.new_game()
                 self.status_text.set('Game started')
-                self.start_game_as_client()
+                self.wait_as_client()
 
-    def start_game_as_client(self):
-        while True:
-            pass
+    def make_move_as_client(self, start, end):
+        print(f'made move from {start} to {end}')
+        self.connector.send(f'{start[0]}{start[1]}{end[0]}{end[1]}'.encode(FORMAT))
+        thread = threading.Thread(target=self.wait_as_client)
+        thread.start()
 
-
-    def send(self, message):
-        self.connector.send(message.encode(FORMAT))
+    def wait_as_client(self):
+        print('receiving from server')
+        print(self.connector)
+        message = self.connector.recv(MSG_LEN).decode(FORMAT)
+        self.move([int(message[0]), int(message[1])], [int(message[2]), int(message[3])])
+        print(message)
+        print('done receiving')
 
 
 # Press the green button in the gutter to run the script.
