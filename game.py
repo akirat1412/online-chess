@@ -381,12 +381,14 @@ class Game:
             legal_moves = self.has_legal_moves()
             if check:
                 self.check_square = self.black_king
+                self.moved_squares.append(self.black_king)
+                self.deleted_squares.append(self.black_king)
                 if not legal_moves:
-                    self.status = 'White Wins!'
+                    self.status = 'White wins by checkmate'
             else:
                 self.check_square = []
                 if not legal_moves:
-                    self.status = 'Draw'
+                    self.status = 'Draw by stalemate'
         else:
             self.black_pieces.remove(start)
             self.black_pieces.append(end)
@@ -397,13 +399,15 @@ class Game:
             check = self.is_in_check('white')
             legal_moves = self.has_legal_moves()
             if check:
+                self.moved_squares.append(self.white_king)
+                self.deleted_squares.append(self.white_king)
                 self.check_square = self.white_king
                 if not legal_moves:
-                    self.status = 'Black Wins!'
+                    self.status = 'Black wins by checkmate'
             else:
                 self.check_square = []
                 if not legal_moves:
-                    self.status = 'Draw'
+                    self.status = 'Draw by stalemate'
 
     def is_in_check(self, color):
         if color == 'white':
