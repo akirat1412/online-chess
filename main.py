@@ -1,14 +1,15 @@
 import tkinter as tk
 from tkinter import font as tkfont
 from PIL import ImageTk
-from game import Game
 import threading
 import socket
 import random
 
+from game import Game
+
 MSG_LEN = 4
 FORMAT = 'utf-8'
-PORT = 5054
+PORT = 5050
 
 SEND_CHALLENGE = '8000'
 RECEIVE_CHALLENGE = '8001'
@@ -17,8 +18,10 @@ ACKNOWLEDGE_CHALLENGE = '8003'
 WHITE = '8004'
 BLACK = '8005'
 RESIGN = '8006'
-DRAW = '8007'
-DISCONNECT = '8008'
+ACK_RESIGN = '8007'
+DRAW = '8008'
+ACK_DRAW = '8009'
+DISCONNECT = '8010'
 
 
 class App:
@@ -43,10 +46,8 @@ class App:
         self.selection = tk.PhotoImage(file='images/selection.png')
         self.selection_square = []
 
-        TITLE_TEXT = 'Online Chess'
-        TITLE_FONT = tkfont.Font(size=24)
-        TITLE_LABEL = tk.Label(self.root, text=TITLE_TEXT, font=TITLE_FONT)
-        TITLE_LABEL.place(x=550, y=50)
+        title_label = tk.Label(self.root, text='Chess Online', font=tkfont.Font(size=24))
+        title_label.place(x=550, y=50)
 
         self.ip_string_var = tk.StringVar()
         IP_FONT = tkfont.Font(size=12)
@@ -65,10 +66,12 @@ class App:
         open_search_button.place(x=565, y=150)
         new_game_button = tk.Button(self.root, text='New Game', bd=1, command=self.offer_game, font=button_font)
         new_game_button.place(x=530, y=250)
-        draw_button = tk.Button(self.root, text='Offer Draw', bd=1, command=self.offer_draw, font=button_font)
-        draw_button.place(x=680, y=250)
+        self.draw_button = tk.Button(self.root, text='Offer Draw', bd=1, command=self.offer_draw, font=button_font)
+        self.draw_button.place(x=680, y=250)
         resign_button = tk.Button(self.root, text='Resign', bd=1, command=self.resign, font=button_font)
         resign_button.place(x=620, y=250)
+        title_label = tk.Label(self.root, text='Images from Wikimedia', font=tkfont.Font(size=12))
+        title_label.place(x=600, y=450)
 
         self.draw_offer = [False, False]
         self.status_font = tkfont.Font(size=14)
@@ -119,6 +122,8 @@ class App:
         self.conn_type = None
         self.connector = None
         self.client_conn = None
+        self.draw_offer = [False, False]
+        self.draw_button['text'] = 'Offer Draw'
 
     # when player selects a piece, renders yellow square behind it
     def render_selection(self):
@@ -230,6 +235,8 @@ class App:
             if self.game.is_legal(self.selection_square, selection_square):
                 self.send_message(self.selection_square, selection_square, None)
                 self.move(self.selection_square, selection_square)
+                if self.in_progress:
+                    self.status_text.set('Your opponent\'s turn')
             else:
                 self.selection_square = []
                 self.render_selection()
@@ -262,8 +269,10 @@ class App:
             self.status_text.set('You are already in a game')
             return
         self.conn_type = 'server'
+
         server_ip = socket.gethostbyname(socket.gethostname())
         self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         self.connector.bind((server_ip, PORT))
         self.connector.listen()
         thread = threading.Thread(target=self.open_connection)
@@ -309,7 +318,8 @@ class App:
             self.status_text.set('You are not in a game')
             return
         self.send_message(None, None, RESIGN)
-        self.end_game()
+        if self.conn_type == 'client':
+            self.end_game()
         if self.player == 'white':
             self.status_text.set('Black wins by resignation')
         else:
@@ -321,12 +331,18 @@ class App:
             self.status_text.set('You are not in a game')
             return
         self.send_message(None, None, DRAW)
-        self.draw_offer[0] = True
-        if self.draw_offer[1]:
-            self.status_text.set('Draw by agreement')
-            self.end_game()
-        else:
+        if not self.draw_offer[0] and not self.draw_offer[1]:
+            self.draw_offer[0] = True
             self.status_text.set('You offered a draw')
+            self.draw_button['text'] = 'Cancel Draw'
+        elif self.draw_offer[0]:
+            self.draw_offer[0] = False
+            self.status_text.set('You canceled your draw offer')
+            self.draw_button['text'] = 'Offer Draw'
+        elif self.draw_offer[1]:
+            self.status_text.set('Draw by agreement')
+            if self.conn_type == 'client':
+                self.end_game()
 
     # sends move/other messages to other player
     def send_message(self, start, end, other):
@@ -357,20 +373,33 @@ class App:
                 self.conn_type = None
                 self.client_conn = None
             elif message == DRAW:
-                self.draw_offer[1] = True
-                if self.draw_offer[0]:
-                    self.status_text.set('Draw by agreement')
-                    self.end_game()
-                else:
+                if not self.draw_offer[0] and not self.draw_offer[1]:
+                    self.draw_offer[1] = True
                     self.status_text.set('You were offered a draw')
+                    self.draw_button['text'] = 'Accept Draw'
+                elif self.draw_offer[0]:
+                    self.status_text.set('Draw by agreement')
+                    if self.conn_type == 'client':
+                        self.send_message(None, None, ACK_DRAW)
+                    self.end_game()
+                elif self.draw_offer[1]:
+                    self.draw_offer[1] = False
+                    self.status_text.set('The draw offer was canceled')
+                    self.draw_button['text'] = 'Offer Draw'
             elif message == RESIGN:
+                if self.conn_type == 'client':
+                    self.send_message(None, None, ACK_RESIGN)
                 self.end_game()
                 if self.player == 'white':
                     self.status_text.set('White wins by resignation')
                 else:
                     self.status_text.set('Black wins by resignation')
+            elif message == ACK_RESIGN:
+                self.end_game()
             else:
                 self.move([int(message[0]), int(message[1])], [int(message[2]), int(message[3])])
+                if self.in_progress:
+                    self.status_text.set('Your turn')
 
     # disconnects player as long as they are not in a game
     def stop_search(self):
@@ -396,7 +425,7 @@ class App:
             return
         try:
             self.conn_type = 'client'
-            server_ip = socket.gethostbyname(socket.gethostname())
+            server_ip = self.ip_entry.get()
             self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.connector.connect((server_ip, PORT))
             thread = threading.Thread(target=self.connect_to_server)
