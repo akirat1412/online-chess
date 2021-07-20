@@ -4,6 +4,8 @@ from PIL import ImageTk
 import threading
 import socket
 import random
+import urllib
+from urllib.request import urlopen
 
 from game import Game
 
@@ -34,51 +36,59 @@ class App:
         self.root.geometry('800x500+150+150')
         self.player = None
         self.load_pieces()
-
-        self.connected = False
-        self.connector = None
-        self.conn_type = None
-        self.client_conn = None
-        self.offered = False
-
         self.board_image = tk.PhotoImage(file='images/chessboard.png')
         self.threaten = tk.PhotoImage(file='images/threaten.png')
         self.selection = tk.PhotoImage(file='images/selection.png')
         self.selection_square = []
 
+        self.connected = False
+        self.connector = None
+        self.conn_type = None
+        self.offered = False
+
+        self.searching = True
+
         title_label = tk.Label(self.root, text='Chess Online', font=tkfont.Font(size=24))
         title_label.place(x=550, y=50)
 
+        font_12 = tkfont.Font(size=12)
+        ip_label = tk.Label(self.root, text='Your IP is: ', font=font_12)
+        ip_label.place(x=550, y=110)
+        self.my_ip = urllib.request.urlopen('https://api.ipify.org').read().decode(FORMAT)
+        self.my_ip_string_var = tk.StringVar()
+        self.my_ip_string_var.set(self.my_ip)
+        self.my_ip_entry = tk.Entry(self.root, textvariable=self.my_ip_string_var, font=font_12)
+        self.my_ip_entry.place(x=630, y=110, width=120)
         self.ip_string_var = tk.StringVar()
-        IP_FONT = tkfont.Font(size=12)
-        self.ip_entry = tk.Entry(self.root, textvariable=self.ip_string_var, font=IP_FONT)
-        self.ip_entry.place(x=530, y=100, height=25, width=140)
+        self.ip_entry = tk.Entry(self.root, textvariable=self.ip_string_var, font=font_12)
+        self.ip_entry.place(x=500, y=152, height=25, width=140)
 
         button_font = tkfont.Font(size=12)
-        find_match_button = tk.Button(self.root, text='Find Match', bd=1,
-                                      command=self.create_client, font=button_font)
-        find_match_button.place(x=680, y=100)
-        close_connection_button = tk.Button(self.root, text='Stop Search', bd=1,
+        find_match_button = tk.Button(self.root, text='Match', bd=1,
+                                      command=self.find_match, font=button_font)
+        find_match_button.place(x=650, y=150)
+        close_connection_button = tk.Button(self.root, text='Cancel', bd=1,
                                             command=self.stop_search, font=button_font)
-        close_connection_button.place(x=680, y=150)
-        open_search_button = tk.Button(self.root, text='Open Search', bd=1,
-                                       command=self.create_server, font=button_font)
-        open_search_button.place(x=565, y=150)
+        close_connection_button.place(x=705, y=150)
         new_game_button = tk.Button(self.root, text='New Game', bd=1, command=self.offer_game, font=button_font)
-        new_game_button.place(x=530, y=250)
+        new_game_button.place(x=530, y=300)
         self.draw_button = tk.Button(self.root, text='Offer Draw', bd=1, command=self.offer_draw, font=button_font)
-        self.draw_button.place(x=680, y=250)
+        self.draw_button.place(x=680, y=300)
         resign_button = tk.Button(self.root, text='Resign', bd=1, command=self.resign, font=button_font)
-        resign_button.place(x=620, y=250)
-        title_label = tk.Label(self.root, text='Images from Wikimedia', font=tkfont.Font(size=12))
+        resign_button.place(x=620, y=300)
+        title_label = tk.Label(self.root, text='Images from Wikimedia', font=font_12)
         title_label.place(x=600, y=450)
 
         self.draw_offer = [False, False]
-        self.status_font = tkfont.Font(size=14)
         self.status_text = tk.StringVar()
         self.status_text.set('')
-        self.status_label = tk.Label(self.root, textvariable=self.status_text, font=self.status_font)
-        self.status_label.place(x=525, y=200)
+        status_label = tk.Label(self.root, textvariable=self.status_text, font=tkfont.Font(size=14))
+        status_label.place(x=525, y=250)
+
+        self.error_text = tk.StringVar()
+        self.error_text.set('')
+        error_label = tk.Label(self.root, textvariable=self.error_text, font=tkfont.Font(size=14))
+        error_label.place(x=525, y=225)
 
         self.canvas = tk.Canvas(self.root, width=480, height=480)
         self.canvas.place(x=10, y=10)
@@ -117,11 +127,10 @@ class App:
     def end_game(self):
         self.in_progress = False
         if self.conn_type == 'server':
-            self.client_conn.close()
+            self.connector.close()
         self.connected = False
         self.conn_type = None
         self.connector = None
-        self.client_conn = None
         self.draw_offer = [False, False]
         self.draw_button['text'] = 'Offer Draw'
 
@@ -218,6 +227,11 @@ class App:
 
     # when a player clicks on a square, renders a selection square, moves a piece, etc
     def interact(self, event):
+
+        # TODO: only for testing; remove this
+        self.send_message(None, None, 'good')
+        return
+
         if not self.in_progress:
             return
         if self.player == 'white':
@@ -263,54 +277,40 @@ class App:
         else:
             self.offered = True
 
-    # runs when 'Find Match' is pressed; creates a server to listen for potential matches
-    def create_server(self):
+    def find_match(self):
         if self.in_progress:
             self.status_text.set('You are already in a game')
             return
-        self.conn_type = 'server'
 
-        server_ip = socket.gethostbyname(socket.gethostname())
+        self.searching = True
         self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        self.connector.bind((server_ip, PORT))
-        self.connector.listen()
-        thread = threading.Thread(target=self.open_connection)
+        my_private_ip = socket.gethostbyname(socket.gethostname())
+        print(self.my_ip_entry.get())
+        if self.my_ip < self.ip_entry.get():
+            self.conn_type = 'server'
+        else:
+            self.conn_type = 'client'
+        self.connector.bind((my_private_ip, PORT))
+        thread = threading.Thread(target=self.connect_to_opponent)
         thread.start()
 
-    # listens for potential matches; when one is found, accepts the connection
-    def open_connection(self):
-        self.status_text.set('Accepting Matches')
-        self.client_conn, _ = self.connector.accept()
-        if self.connector:
-            self.connected = True
-            self.accept_connection()
-        else:
-            self.conn_type = None
-            self.client_conn = None
-
-    # returns message to challenge sender
-    def accept_connection(self):
-        self.status_text.set('You received a challenge')
-        message = self.client_conn.recv(MSG_LEN).decode(FORMAT)
-        if message == SEND_CHALLENGE:
-            thread = threading.Thread(target=self.receive_message)
-            thread.start()
-            self.send_message(None, None, RECEIVE_CHALLENGE)
-            while self.connected:
-                if self.offered:
-                    self.offered = False
-                    self.send_message(None, None, ACCEPT_CHALLENGE)
-                    if random.random() < 0.5:
-                        self.player = 'white'
-                        self.send_message(None, None, BLACK)
-                    else:
-                        self.player = 'black'
-                        self.send_message(None, None, WHITE)
-                    self.new_game()
-                    self.status_text.set('Game started')
-                    self.render_all_pieces()
-                    break
+    def connect_to_opponent(self):
+        self.status_text.set('Looking for match as ' + self.conn_type)
+        ip = self.ip_entry.get()
+        arr = 0
+        while self.searching:
+            try:
+                self.connector.connect((ip, PORT))
+                break
+            except:
+                arr += 1
+                self.status_text.set(f'attempt {arr}')
+                pass
+        self.status_text.set('connected')
+        print('connected')
+        self.connected = True
+        self.new_game()
+        self.receive_message()
 
     # causes player to lose the game by resignation
     def resign(self):
@@ -351,27 +351,28 @@ class App:
         else:
             message = f'{start[0]}{start[1]}{end[0]}{end[1]}'.encode(FORMAT)
         if self.conn_type == 'server':
-            self.client_conn.send(message)
+            self.connector.send(message)
         else:
             self.connector.send(message)
+        self.status_text.set('sent message')
 
     # always running while game is in progress; receives messages from other player
     def receive_message(self):
         while self.connected:
-            if self.conn_type == 'server':
-                message = self.client_conn.recv(MSG_LEN).decode(FORMAT)
-            else:
-                message = self.connector.recv(MSG_LEN).decode(FORMAT)
+
+            # TODO: only for testing; remove this
+            message = self.connector.recv(MSG_LEN).decode(FORMAT)
+            self.error_text.set(message)
+            return
+
             if not message:
                 return
             if message == DISCONNECT:
                 self.status_text.set('Your opponent disconnected')
-                if self.conn_type == 'server':
-                    self.client_conn.close()
+                self.connector.close()
                 self.connected = False
                 self.connector = None
                 self.conn_type = None
-                self.client_conn = None
             elif message == DRAW:
                 if not self.draw_offer[0] and not self.draw_offer[1]:
                     self.draw_offer[1] = True
@@ -411,50 +412,11 @@ class App:
             self.send_message(None, None, DISCONNECT)
             self.status_text.set('You disconnected')
             if self.conn_type == 'server':
-                self.client_conn.close()
+                self.connector.close()
         else:
             self.status_text.set('You stopped your search')
         self.connector = None
         self.conn_type = None
-        self.client_conn = None
-
-    # runs when 'Find Match' is pressed; will try to connect with IP address given; if successful, run connect_to_server
-    def create_client(self):
-        if self.in_progress:
-            self.status_text.set('You are already in a game')
-            return
-        try:
-            self.conn_type = 'client'
-            server_ip = self.ip_entry.get()
-            self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.connector.connect((server_ip, PORT))
-            thread = threading.Thread(target=self.connect_to_server)
-            thread.start()
-        except ConnectionRefusedError:
-            self.status_text.set('Opponent not found')
-
-    # waits for server to start game
-    def connect_to_server(self):
-        self.send_message(None, None, SEND_CHALLENGE)
-        self.connected = True
-        while self.connected:
-            message = self.connector.recv(MSG_LEN).decode(FORMAT)
-            if message == RECEIVE_CHALLENGE:
-                self.status_text.set('Your challenge was received')
-            elif message == ACCEPT_CHALLENGE:
-                message = self.connector.recv(MSG_LEN).decode(FORMAT)
-                if message == WHITE:
-                    self.player = 'white'
-                else:
-                    self.player = 'black'
-                self.new_game()
-                self.status_text.set('Game started')
-                self.receive_message()
-            elif message == DISCONNECT:
-                self.status_text.set('Your opponent disconnected')
-                self.connected = False
-                self.connector = None
-                self.conn_type = None
 
 
 # Press the green button in the gutter to run the script.
