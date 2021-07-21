@@ -11,7 +11,8 @@ from game import Game
 
 MSG_LEN = 4
 FORMAT = 'utf-8'
-PORT = 5050
+SERVER_PORT = 5050
+CLIENT_PORT = SERVER_PORT + 1
 
 SEND_CHALLENGE = '8000'
 RECEIVE_CHALLENGE = '8001'
@@ -70,8 +71,8 @@ class App:
         close_connection_button = tk.Button(self.root, text='Cancel', bd=1,
                                             command=self.stop_search, font=button_font)
         close_connection_button.place(x=705, y=150)
-        new_game_button = tk.Button(self.root, text='New Game', bd=1, command=self.offer_game, font=button_font)
-        new_game_button.place(x=530, y=300)
+        # new_game_button = tk.Button(self.root, text='New Game', bd=1, command=self.offer_game, font=button_font)
+        # new_game_button.place(x=530, y=300)
         self.draw_button = tk.Button(self.root, text='Offer Draw', bd=1, command=self.offer_draw, font=button_font)
         self.draw_button.place(x=680, y=300)
         resign_button = tk.Button(self.root, text='Resign', bd=1, command=self.resign, font=button_font)
@@ -266,46 +267,38 @@ class App:
         if self.game.status != '':
             self.end_game()
 
-    # when server receives a challenge, can start new game
-    def offer_game(self):
-        if self.in_progress:
-            self.status_text.set('You are already in a game')
-        elif not self.connected:
-            self.status_text.set('You do not have an opponent')
-        elif self.conn_type == 'client':
-            self.status_text.set('Waiting for opponent to accept')
-        else:
-            self.offered = True
-
     def find_match(self):
         if self.in_progress:
             self.status_text.set('You are already in a game')
             return
 
         self.searching = True
-        self.connector = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        my_private_ip = socket.gethostbyname(socket.gethostname())
+        self.connector = socket.socket()
+        self.connector.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # self.connector.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         print(self.my_ip_entry.get())
-        if self.my_ip < self.ip_entry.get():
+        if self.my_ip < self.ip_entry.get() or random.random() < 0.5:
             self.conn_type = 'server'
+            self.connector.bind(('', SERVER_PORT))
         else:
             self.conn_type = 'client'
-        self.connector.bind((my_private_ip, PORT))
+            self.connector.bind(('', CLIENT_PORT))
         thread = threading.Thread(target=self.connect_to_opponent)
         thread.start()
 
     def connect_to_opponent(self):
         self.status_text.set('Looking for match as ' + self.conn_type)
         ip = self.ip_entry.get()
-        arr = 0
-        while self.searching:
-            try:
-                self.connector.connect((ip, PORT))
-                break
-            except:
-                arr += 1
-                self.status_text.set(f'attempt {arr}')
-                pass
+        if self.conn_type == 'server':
+            attempt = 0
+            while self.connector.connect_ex((ip, CLIENT_PORT)):
+                attempt += 1
+                self.status_text.set(f'attempt {attempt} as server')
+        else:
+            attempt = 0
+            while self.connector.connect_ex((ip, SERVER_PORT)):
+                attempt += 1
+                self.status_text.set(f'attempt {attempt} as client')
         self.status_text.set('connected')
         print('connected')
         self.connected = True
