@@ -3,6 +3,7 @@ from tkinter import font as tkfont
 from PIL import ImageTk
 from threading import Thread
 import socket
+import time
 import random
 import urllib
 from urllib.request import urlopen
@@ -11,7 +12,8 @@ from game import Game
 
 MSG_LEN = 4
 FORMAT = 'utf-8'
-SERVER_PORT = 5050
+PORT = 5053
+SERVER_PORT = 5062
 CLIENT_PORT = SERVER_PORT + 1
 
 INIT = '8000'
@@ -44,9 +46,9 @@ class App:
         self.selection = tk.PhotoImage(file='images/selection.png')
 
         self.connector = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.connector.bind(('', PORT))
         self.searching = False
         self.connected = False
-        self.conn_type = None
         self.opponent_addr = None
 
         self.canvas = tk.Canvas(self.root, width=480, height=480)
@@ -74,33 +76,17 @@ class App:
                                             command=self.stop_search, font=font_12)
         close_connection_button.place(x=705, y=150)
         self.draw_button = tk.Button(self.root, text='Offer Draw', bd=1, command=self.offer_draw, font=font_12)
-        self.draw_button.place(x=680, y=300)
+        self.draw_button.place(x=640, y=250)
         resign_button = tk.Button(self.root, text='Resign', bd=1, command=self.resign, font=font_12)
-        resign_button.place(x=620, y=300)
+        resign_button.place(x=580, y=250)
         title_label = tk.Label(self.root, text='Images from Wikimedia', font=font_12)
         title_label.place(x=600, y=450)
         self.status_text = tk.StringVar()
         self.status_text.set('')
         status_label = tk.Label(self.root, textvariable=self.status_text, font=tkfont.Font(size=14))
-        status_label.place(x=525, y=250)
+        status_label.place(x=525, y=200)
 
-        # currently using to test everything else
-        self.error_text = tk.StringVar()
-        self.error_text.set('')
-        error_label = tk.Label(self.root, textvariable=self.error_text, font=tkfont.Font(size=14))
-        error_label.place(x=525, y=225)
-
-        if random.random() < 0.5:
-            self.conn_type = 'server'
-            self.opponent_addr = ('192.168.0.4', CLIENT_PORT)
-            self.error_text.set('server')
-            self.connector.bind(('', SERVER_PORT))
-        else:
-            self.conn_type = 'client'
-            self.opponent_addr = ('192.168.0.4', SERVER_PORT)
-            self.error_text.set('client')
-            self.connector.bind(('', CLIENT_PORT))
-
+        self.root.protocol("WM_DELETE_WINDOW", self.exit_app)
         self.root.mainloop()
 
     # load image files into variables for rendering
@@ -137,7 +123,6 @@ class App:
         self.in_progress = False
         self.searching = False
         self.connected = False
-        self.conn_type = None
         self.draw_offer = [False, False]
         self.draw_button['text'] = 'Offer Draw'
 
@@ -277,15 +262,7 @@ class App:
         elif self.connected:
             self.status_text.set('Already connected')
         else:
-            opp_ip = self.ip_string_var.get()
-
-            # TODO: Uncomment this to test network connection
-            # if self.my_ip < opp_ip:
-            #     self.conn_type = 'server'
-            #     self.opponent_addr = (opp_ip, CLIENT_PORT)
-            # else:
-            #     self.conn_type = 'client'
-            #     self.opponent_addr = (opp_ip, SERVER_PORT)
+            self.opponent_addr = (self.ip_string_var.get(), PORT)
 
             Thread(target=self.connect_to_opponent).start()
             Thread(target=self.receive_message).start()
@@ -293,11 +270,15 @@ class App:
     def connect_to_opponent(self):
         self.searching = True
         self.status_text.set('Searching for opponent')
-        while self.searching:
-            self.send_message(INIT)
+        try:
+            while self.searching:
+                self.send_message(INIT)
+                time.sleep(1)
 
-        if self.connected:
-            self.send_message(START_CONN)
+            if self.connected and self.ip_string_var.get() < self.my_ip:
+                self.send_message(START_CONN)
+        except OSError:
+            self.status_text.set('Enter a valid IP address')
 
     # causes player to lose the game by resignation
     def resign(self):
@@ -331,9 +312,7 @@ class App:
 
     # sends move/other messages to other player
     def send_message(self, message):
-        print(self.opponent_addr)
         self.connector.sendto(message.encode(FORMAT), self.opponent_addr)
-        self.error_text.set(f'sent message {message}')
 
     # always running while game is in progress; receives messages from other player
     def receive_message(self):
@@ -348,8 +327,12 @@ class App:
                     self.connected = True
                     self.searching = False
             elif message == START_CONN:
+                self.connected = True
+                self.searching = False
                 self.send_message(ACK_CONN)
             elif message == ACK_CONN:
+                self.connected = True
+                self.searching = False
                 if random.random() < 0.5:
                     self.player = 'white'
                     self.send_message(START_AS_BLACK)
@@ -370,16 +353,13 @@ class App:
                     self.draw_button['text'] = 'Accept Draw'
                 elif self.draw_offer[0]:
                     self.status_text.set('Draw by agreement')
-                    # if self.conn_type == 'client':
-                    #     self.send_message(ACK_DRAW)
+
                     self.end_game()
                 elif self.draw_offer[1]:
                     self.draw_offer[1] = False
                     self.status_text.set('The draw offer was canceled')
                     self.draw_button['text'] = 'Offer Draw'
             elif message == RESIGN:
-                # if self.conn_type == 'client':
-                #     self.send_message(ACK_RESIGN)
                 self.end_game()
                 if self.player == 'white':
                     self.status_text.set('White wins by resignation')
@@ -399,16 +379,14 @@ class App:
         elif self.connected:
             self.status_text.set('You are already connected')
         elif self.searching:
-
-            self.searching = False
             self.connected = False
-            self.send_message(DISCONNECT)
-            self.status_text.set('You disconnected')
-            if self.conn_type == 'server':
-                self.connector.close()
-        else:
+            self.searching = False
             self.status_text.set('You stopped your search')
-        self.conn_type = None
+
+    def exit_app(self):
+        self.connector.close()
+        self.root.destroy()
+
 
 
 # Press the green button in the gutter to run the script.
